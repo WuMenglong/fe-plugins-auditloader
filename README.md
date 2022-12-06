@@ -31,7 +31,9 @@ CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
   `timestamp` DATETIME NOT NULL COMMENT "查询开始时间",
   `clientIp` VARCHAR(32) COMMENT "客户端IP",
   `user` VARCHAR(64) COMMENT "查询用户名",
+  `authorizedUser` VARCHAR(64) COMMENT "用户唯一标识，即user_identity",
   `resourceGroup` VARCHAR(64) COMMENT "资源组名",
+  `catalog` VARCHAR(32) COMMENT "数据目录名",
   `db` VARCHAR(96) COMMENT "查询所在数据库",
   `state` VARCHAR(8) COMMENT "查询状态（EOF，ERR，OK）",
   `errorCode` VARCHAR(96) COMMENT "错误码",
@@ -94,7 +96,7 @@ Archive:  auditloader.zip
 
 根据我们实际的集群信息，修改配置文件`plugin.conf`：
 
-```XML
+```properties
 ### plugin configuration
 
 # The max size of a batch, default is 50MB
@@ -146,7 +148,7 @@ password=
 ##### 4、安装插件
 
 StarRocks安装本地插件的语法为：
-
+> 需要查看动态分区是否创建完, `dynamic_partition_check_interval_seconds` 默认为600s
 ```sql
 INSTALL PLUGIN FROM "/location/plugindemo.zip";
 ```
@@ -160,7 +162,7 @@ mysql> INSTALL PLUGIN FROM "/opt/module/starrocks/auditloader.zip";
 安装完成后，查看当前已安装插件信息：
 
 ```SQL
-mysql> SHOW PLUGINS\G
+mysql> SHOW PLUGINS \G;
 *************************** 1. row ***************************
        Name: __builtin_AuditLogBuilder
        Type: AUDIT

@@ -66,7 +66,7 @@ public class StarrocksStreamLoader {
 
         conn.addRequestProperty("label", label);
         conn.addRequestProperty("max_filter_ratio", "1.0");
-        conn.addRequestProperty("columns", "queryId, timestamp, clientIp, user, resourceGroup, db, state, errorCode, queryTime, scanBytes," +
+        conn.addRequestProperty("columns", "queryId, timestamp, clientIp, user, authorizedUser, resourceGroup, catalog, db, state, errorCode, queryTime, scanBytes," +
                 " scanRows, returnRows, cpuCostNs, memCostBytes, stmtId, isQuery, feIp, stmt, digest, planCpuCosts, planMemCosts");
 
         conn.setDoOutput(true);
@@ -82,7 +82,7 @@ public class StarrocksStreamLoader {
         sb.append("-H \"").append("Expect\":").append("\"100-continue\" \\\n  ");
         sb.append("-H \"").append("Content-Type\":").append("\"text/plain; charset=UTF-8\" \\\n  ");
         sb.append("-H \"").append("max_filter_ratio\":").append("\"1.0\" \\\n  ");
-        sb.append("-H \"").append("columns\":").append("\"queryId, timestamp, clientIp, user, resourceGroup, db, state, errorCode, queryTime," +
+        sb.append("-H \"").append("columns\":").append("\"queryId, timestamp, clientIp, user, authorizedUser, resourceGroup, catalog, db, state, errorCode, queryTime," +
                 " scanBytes, scanRows, returnRows, cpuCostNs, memCostBytes, stmtId, isQuery, feIp, stmt, digest, planCpuCosts, planMemCosts\" \\\n  ");
         sb.append("\"").append(conn.getURL()).append("\"");
         return sb.toString();

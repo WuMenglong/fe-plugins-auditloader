@@ -28,6 +28,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -142,7 +143,9 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(longToTimeString(event.timestamp)).append("\t");
         auditBuffer.append(event.clientIp).append("\t");
         auditBuffer.append(event.user).append("\t");
+        auditBuffer.append(event.authorizedUser).append("\t");
         auditBuffer.append(event.resourceGroup).append("\t");
+        auditBuffer.append(event.catalog).append("\t");
         auditBuffer.append(event.db).append("\t");
         auditBuffer.append(event.state).append("\t");
         auditBuffer.append(event.errorCode).append("\t");
@@ -157,6 +160,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.feIp).append("\t");
 
         String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ");
+        if(stmt.contains("/*") && stmt.contains("*/"))
+            stmt = stmt.substring(stmt.indexOf("*/") + 3);
         LOG.debug("receive audit event with stmt: {}", stmt);
         auditBuffer.append(stmt).append("\t");
         auditBuffer.append(event.digest).append("\t");
@@ -172,7 +177,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         if (maxLen >= str.getBytes().length) {
             return str;
         }
-        Charset utf8Charset = Charset.forName("UTF-8");
+        Charset utf8Charset = StandardCharsets.UTF_8;
         CharsetDecoder decoder = utf8Charset.newDecoder();
         byte[] sb = str.getBytes();
         ByteBuffer buffer = ByteBuffer.wrap(sb, 0, maxLen);
