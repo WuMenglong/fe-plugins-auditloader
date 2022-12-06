@@ -178,7 +178,7 @@ JavaVersion: 1.8.31
        Name: AuditLoader
        Type: AUDIT
 Description: load audit log to olap load, and user can view the statistic of queries
-    Version: 1.0.3
+    Version: 1.0.4
 JavaVersion: 1.8.0
   ClassName: com.starrocks.plugin.audit.AuditLoaderPlugin
      SoName: NULL
