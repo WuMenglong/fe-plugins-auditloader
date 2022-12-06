@@ -5,7 +5,7 @@ StarRocks中所有SQL的审计日志保存在本地fe/log/fe.audit.log里，没�
 
 ##### 注意：
 
-1、在使用插件时，随着StarRocks的迭代升级，审计日志fe.audit.log中的字段个数也在逐渐增多，所以不同的StarRocks版本需要使用对应版本的插件，同时在StarRocks中存放审计日志的表的创建语句也要随之调整，下面演示所用的建表语句适用于**StarRocks 2.3**版本。
+1、在使用插件时，随着StarRocks的迭代升级，审计日志fe.audit.log中的字段个数也在逐渐增多，所以不同的StarRocks版本需要使用对应版本的插件，同时在StarRocks中存放审计日志的表的创建语句也要随之调整，下面演示所用的建表语句适用于**StarRocks 2.4**版本。
 
 2、在开发插件时，若发现StarRocks新迭代版本中的审计日志格式出现了变化，则需要替换工程中的fe-plugins-auditloader\lib\starrocks-fe.jar，同时修改代码中和字段相关的内容。
 
@@ -31,7 +31,9 @@ CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
   `timestamp` DATETIME NOT NULL COMMENT "查询开始时间",
   `clientIp` VARCHAR(32) COMMENT "客户端IP",
   `user` VARCHAR(64) COMMENT "查询用户名",
+  `authorizedUser` VARCHAR(64) COMMENT "用户唯一标识，即user_identity",
   `resourceGroup` VARCHAR(64) COMMENT "资源组名",
+  `catalog` VARCHAR(32) COMMENT "数据目录名",
   `db` VARCHAR(96) COMMENT "查询所在数据库",
   `state` VARCHAR(8) COMMENT "查询状态（EOF，ERR，OK）",
   `errorCode` VARCHAR(96) COMMENT "错误码",
@@ -176,7 +178,7 @@ JavaVersion: 1.8.31
        Name: AuditLoader
        Type: AUDIT
 Description: load audit log to olap load, and user can view the statistic of queries
-    Version: 1.0.1
+    Version: 1.0.3
 JavaVersion: 1.8.0
   ClassName: com.starrocks.plugin.audit.AuditLoaderPlugin
      SoName: NULL

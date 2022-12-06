@@ -142,7 +142,9 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(longToTimeString(event.timestamp)).append("\t");
         auditBuffer.append(event.clientIp).append("\t");
         auditBuffer.append(event.user).append("\t");
+        auditBuffer.append(event.authorizedUser).append("\t");
         auditBuffer.append(event.resourceGroup).append("\t");
+        auditBuffer.append(event.catalog).append("\t");
         auditBuffer.append(event.db).append("\t");
         auditBuffer.append(event.state).append("\t");
         auditBuffer.append(event.errorCode).append("\t");
@@ -157,6 +159,9 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.feIp).append("\t");
 
         String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ");
+        if(stmt.contains("/*") && stmt.contains("*/")) {
+            stmt = stmt.substring(stmt.indexOf("*/") + 3);
+        }
         LOG.debug("receive audit event with stmt: {}", stmt);
         auditBuffer.append(stmt).append("\t");
         auditBuffer.append(event.digest).append("\t");
