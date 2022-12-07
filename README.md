@@ -31,7 +31,7 @@ CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
   `timestamp` DATETIME NOT NULL COMMENT "查询开始时间",
   `clientIp` VARCHAR(32) COMMENT "客户端IP",
   `user` VARCHAR(64) COMMENT "查询用户名",
-  `authorizedUser` VARCHAR(64) COMMENT "用户唯一标识，即user_identity",
+  `authorizedUser` VARCHAR(64) COMMENT "用户唯一标识，既user_identity",
   `resourceGroup` VARCHAR(64) COMMENT "资源组名",
   `catalog` VARCHAR(32) COMMENT "数据目录名",
   `db` VARCHAR(96) COMMENT "查询所在数据库",
