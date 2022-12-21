@@ -160,8 +160,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.feIp).append("\t");
 
         String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ");
-        if(stmt.contains("/*") && stmt.contains("*/"))
-            stmt = stmt.substring(stmt.indexOf("*/") + 3);
+//        if(stmt.contains("/*") && stmt.contains("*/"))
+//            stmt = stmt.substring(stmt.indexOf("*/") + 3);
         LOG.debug("receive audit event with stmt: {}", stmt);
         auditBuffer.append(stmt).append("\t");
         auditBuffer.append(event.digest).append("\t");
