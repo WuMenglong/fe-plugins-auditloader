@@ -36,7 +36,7 @@ import java.util.Date;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -51,8 +51,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
 
     private StringBuilder auditBuffer = new StringBuilder();
     private long lastLoadTime = 0;
-
-    private BlockingQueue<AuditEvent> auditEventQueue = new LinkedBlockingDeque<AuditEvent>(1);
+    private BlockingQueue<AuditEvent> auditEventQueue;
     private StarrocksStreamLoader streamLoader;
     private Thread loadThread;
 
@@ -71,7 +70,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
             this.lastLoadTime = System.currentTimeMillis();
 
             loadConfig(ctx, info.getProperties());
-
+            this.auditEventQueue = new LinkedBlockingQueue<>(conf.maxQueueSize);
             this.streamLoader = new StarrocksStreamLoader(conf);
             this.loadThread = new Thread(new LoadWorker(this.streamLoader), "audit loader thread");
             this.loadThread.start();
@@ -140,6 +139,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     private void assembleAudit(AuditEvent event) {
         auditBuffer.append(event.queryId).append("\t");
         auditBuffer.append(longToTimeString(event.timestamp)).append("\t");
+        String queryType = (event.queryTime > conf.qeSlowLogMs) ? "slow_query" : "query";
+        auditBuffer.append(queryType).append("\t");
         auditBuffer.append(event.clientIp).append("\t");
         auditBuffer.append(event.user).append("\t");
         auditBuffer.append(event.authorizedUser).append("\t");
@@ -159,7 +160,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.feIp).append("\t");
 
         String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ").replace("\r ","");
-        if(stmt.contains("/*") && stmt.contains("*/")) {
+        if(stmt.contains("/*") && stmt.contains("*/") && stmt.contains("DBeaver")) {
             stmt = stmt.substring(stmt.indexOf("*/") + 3);
         }
         LOG.debug("receive audit event with stmt: {}", stmt);
@@ -167,13 +168,10 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.digest).append("\t");
         auditBuffer.append(event.planCpuCosts).append("\t");
         auditBuffer.append(event.planMemCosts).append("\n");
-
-
-
     }
 
     private String truncateByBytes(String str) {
-        int maxLen = Math.min(conf.max_stmt_length, str.getBytes().length);
+        int maxLen = Math.min(conf.maxStmtLength, str.getBytes().length);
         if (maxLen >= str.getBytes().length) {
             return str;
         }
@@ -218,6 +216,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         public static final String PROP_TABLE = "table";
         // the max stmt length to be loaded in audit table.
         public static final String MAX_STMT_LENGTH = "max_stmt_length";
+        public static final String QE_SLOW_LOG_MS = "qe_slow_log_ms";
+        public static final String MAX_QUEUE_SIZE = "max_queue_size";
 
         public long maxBatchSize = 50 * 1024 * 1024;
         public long maxBatchIntervalSec = 60;
@@ -228,15 +228,20 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         public String table = "starrocks_audit_tbl__";
         // the identity of FE which run this plugin
         public String feIdentity = "";
-        public int max_stmt_length = 4096;
+        public int maxStmtLength = 4096;
+        public int qeSlowLogMs = 5000;
+        public int maxQueueSize = 1000;
 
         public void init(Map<String, String> properties) throws PluginException {
             try {
                 if (properties.containsKey(PROP_MAX_BATCH_SIZE)) {
-                    maxBatchSize = Long.valueOf(properties.get(PROP_MAX_BATCH_SIZE));
+                    maxBatchSize = Long.parseLong(properties.get(PROP_MAX_BATCH_SIZE));
                 }
                 if (properties.containsKey(PROP_MAX_BATCH_INTERVAL_SEC)) {
-                    maxBatchIntervalSec = Long.valueOf(properties.get(PROP_MAX_BATCH_INTERVAL_SEC));
+                    maxBatchIntervalSec = Long.parseLong(properties.get(PROP_MAX_BATCH_INTERVAL_SEC));
+                }
+                if (properties.containsKey(QE_SLOW_LOG_MS)) {
+                    qeSlowLogMs = Integer.parseInt(properties.get(QE_SLOW_LOG_MS));
                 }
                 if (properties.containsKey(PROP_FRONTEND_HOST_PORT)) {
                     frontendHostPort = properties.get(PROP_FRONTEND_HOST_PORT);
@@ -254,7 +259,10 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
                     table = properties.get(PROP_TABLE);
                 }
                 if (properties.containsKey(MAX_STMT_LENGTH)) {
-                    max_stmt_length = Integer.parseInt(properties.get(MAX_STMT_LENGTH));
+                    maxStmtLength = Integer.parseInt(properties.get(MAX_STMT_LENGTH));
+                }
+                if (properties.containsKey(MAX_QUEUE_SIZE)) {
+                    maxQueueSize = Integer.parseInt(properties.get(MAX_QUEUE_SIZE));
                 }
             } catch (Exception e) {
                 throw new PluginException(e.getMessage());

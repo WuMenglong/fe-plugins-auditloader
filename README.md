@@ -1,11 +1,11 @@
 # fe-plugins-auditloader
 ### 插件说明：
 
-StarRocks中所有SQL的审计日志保存在本地fe/log/fe.audit.log里，没有入库保存。为了方便对业务SQL进行分析，这里参考Apache Doris的审计插件代码，简单改造了一版适用于StarRocks的审计日志插件。逻辑上，StarRocks会在执行SQL后调用插件方法收集SQL的审计信息，审计信息的内容会在内存中攒批后基于Stream Load的方式导入至StarRocks表中。
+StarRocks中所有SQL的审计日志保存在本地fe/log/fe.audit.log里，没有入库保存。为了方便对业务SQL进行分析，这里参考Apache Doris的审计插件代码，简单改造了一版适用于StarRocks的审计日志插件。逻辑上，StarRocks会在执行SQL后调用插件收集SQL的审计信息，审计信息的内容会在内存中攒批后基于Stream Load的方式导入至StarRocks表中。
 
 ##### 注意：
 
-1、在使用插件时，随着StarRocks的迭代升级，审计日志fe.audit.log中的字段个数也在逐渐增多，所以不同的StarRocks版本需要使用对应版本的插件，同时在StarRocks中存放审计日志的表的创建语句也要随之调整，下面演示所用的建表语句适用于**StarRocks 2.4**版本。
+1、在使用插件时，随着StarRocks的迭代升级，审计日志fe.audit.log中的字段个数也在逐渐增多，所以不同的StarRocks版本需要使用对应版本的插件，同时在StarRocks中存放审计日志的表的创建语句也要随之调整，下面演示所用的建表语句适用于**StarRocks 2.4+**版本。
 
 2、在开发插件时，若发现StarRocks新迭代版本中的审计日志格式出现了变化，则需要替换工程中的fe-plugins-auditloader\lib\starrocks-fe.jar，同时修改代码中和字段相关的内容。
 
@@ -29,6 +29,7 @@ create database starrocks_audit_db__;
 CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
   `queryId` VARCHAR(48) COMMENT "查询的唯一ID",
   `timestamp` DATETIME NOT NULL COMMENT "查询开始时间",
+  `queryType` VARCHAR(12) COMMENT "查询类型（query, slow_query）",
   `clientIp` VARCHAR(32) COMMENT "客户端IP",
   `user` VARCHAR(64) COMMENT "查询用户名",
   `authorizedUser` VARCHAR(64) COMMENT "用户唯一标识，既user_identity",
@@ -51,7 +52,7 @@ CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
   `planCpuCosts` DOUBLE COMMENT "查询规划阶段CPU占用（纳秒）",
   `planMemCosts` DOUBLE COMMENT "查询规划阶段内存占用（字节）"
 ) ENGINE = OLAP
-DUPLICATE KEY (`queryId`, `timestamp`, `clientIp`)
+DUPLICATE KEY (`queryId`, `timestamp`, `queryType`)
 COMMENT "审计日志表"
 PARTITION BY RANGE (`timestamp`) ()
 DISTRIBUTED BY HASH (`queryId`) BUCKETS 3 
@@ -99,20 +100,23 @@ Archive:  auditloader.zip
 ```XML
 ### plugin configuration
 
-# The max size of a batch, default is 50MB
+# The max size of a batch, default is 50MB.
 max_batch_size=52428800
 
-# The max interval of batch loaded, default is 60 seconds
+# The max interval of batch loaded, default is 60 seconds.
 max_batch_interval_sec=60
 
-# the max stmt length to be loaded in audit table, default is 4096
+# the max stmt length to be loaded in audit table, default is 4096.
 max_stmt_length=4096
 
 # StarRocks FE host for loading the audit, default is 127.0.0.1:8030.
-# this should be the host port for stream load
+# this should be the host port for stream load.
 frontend_host_port=127.0.0.1:8030
 
-# Database of the audit table
+# If the response time of a query exceed this threshold, it will be recored in audit table as slow_query.
+qe_slow_log_ms=5000
+
+# Database of the audit table.
 database=starrocks_audit_db__
 
 # Audit table name, to save the audit data.
@@ -121,7 +125,7 @@ table=starrocks_audit_tbl__
 # StarRocks user. This user must have LOAD_PRIV to the audit table.
 user=root
 
-# StarRocks user's password
+# StarRocks user's password.
 password=
 ```
 
@@ -177,8 +181,8 @@ JavaVersion: 1.8.31
 *************************** 2. row ***************************
        Name: AuditLoader
        Type: AUDIT
-Description: load audit log to olap load, and user can view the statistic of queries
-    Version: 1.0.4
+Description: load audit log to starrocks, and user can view the statistic of queries
+    Version: 3.0.0
 JavaVersion: 1.8.0
   ClassName: com.starrocks.plugin.audit.AuditLoaderPlugin
      SoName: NULL

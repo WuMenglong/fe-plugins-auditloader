@@ -6,35 +6,17 @@
 
     <groupId>com.starrocks</groupId>
     <artifactId>fe-plugins-auditloader</artifactId>
-    <version>1.0.4</version>
+    <version>3.0.1</version>
 
     <properties>
         <log4j2.version>2.17.1</log4j2.version>
-        <starrocks.common.version>1.0.0</starrocks.common.version>
-        <starrocks.core.version>3.4.0</starrocks.core.version>
         <project.scm.id>github</project.scm.id>
     </properties>
-    <scm>
-        <connection>scm:git:https://github.com/StarRocks/starrocks.git</connection>
-        <developerConnection>scm:git:https://github.com/StarRocks/starrocks.git</developerConnection>
-        <url>scm:git:https://github.com/StarRocks/starrocks.git</url>
-        <tag>HEAD</tag>
-    </scm>
     <dependencies>
-        <!--<dependency>
-            <groupId>com.starrocks</groupId>
-            <artifactId>fe-core</artifactId>
-            <version>${starrocks.core.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.starrocks</groupId>
-            <artifactId>fe-common</artifactId>
-            <version>${starrocks.common.version}</version>
-        </dependency>-->
         <dependency>
             <groupId>com.starrocks</groupId>
             <artifactId>starrocks-fe</artifactId>
-            <version>3.4.0</version>
+            <version>3.0.0</version>
             <scope>system</scope>
             <systemPath>${basedir}/lib/starrocks-fe.jar</systemPath>
         </dependency>
