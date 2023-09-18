@@ -42,7 +42,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /*
- * This plugin will load audit log to specified starrocks table at specified interval
+ * This plugin will load audit information to specified starrocks table at specified interval
  */
 public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     private final static Logger LOG = LogManager.getLogger(AuditLoaderPlugin.class);
@@ -101,8 +101,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
             props.setProperty(entry.getKey(), entry.getValue());
         }
 
-        final Map<String, String> properties = props.stringPropertyNames().stream()
-                .collect(Collectors.toMap(Function.identity(), props::getProperty));
+        final Map<String, String> properties = props.stringPropertyNames().stream().collect(Collectors.toMap(Function.identity(), props::getProperty));
         conf = new AuditLoaderConf();
         conf.init(properties);
         conf.feIdentity = ctx.getFeIdentity();
@@ -159,8 +158,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         auditBuffer.append(event.isQuery ? 1 : 0).append("\t");
         auditBuffer.append(event.feIp).append("\t");
 
-        String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ").replace("\r ","");
-        if(stmt.contains("/*") && stmt.contains("*/") && stmt.contains("DBeaver")) {
+        String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ").replace("\r ", "");
+        if (stmt.contains("/*") && stmt.contains("*/") && stmt.contains("DBeaver")) {
             stmt = stmt.substring(stmt.indexOf("*/") + 3);
         }
         LOG.debug("receive audit event with stmt: {}", stmt);
@@ -190,7 +189,9 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         if (auditBuffer.length() < conf.maxBatchSize && System.currentTimeMillis() - lastLoadTime < conf.maxBatchIntervalSec * 1000) {
             return;
         }
-
+        if(auditBuffer.length() == 0) {
+            return;
+        }
         lastLoadTime = System.currentTimeMillis();
         // begin to load
         try {
@@ -283,8 +284,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
                     AuditEvent event = auditEventQueue.poll(5, TimeUnit.SECONDS);
                     if (event != null) {
                         assembleAudit(event);
-                        loadIfNecessary(loader);
                     }
+                    loadIfNecessary(loader);
                 } catch (InterruptedException ie) {
                     LOG.debug("encounter exception when loading current audit batch", ie);
                 } catch (Exception e) {

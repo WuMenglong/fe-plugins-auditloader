@@ -1,13 +1,13 @@
 # fe-plugins-auditloader
 ### 插件说明：
 
-StarRocks中所有SQL的审计日志保存在本地fe/log/fe.audit.log里，没有入库保存。为了方便对业务SQL进行分析，这里参考Apache Doris的审计插件代码，简单改造了一版适用于StarRocks的审计日志插件。逻辑上，StarRocks会在执行SQL后调用插件收集SQL的审计信息，审计信息的内容会在内存中攒批后基于Stream Load的方式导入至StarRocks表中。
+StarRocks 中所有 SQL 的审计日志保存在本地 fe/log/fe.audit.log 中，没有入库保存。为方便对业务 SQL 进行分析，社区开发出将审计信息入库 StarRocks 的审计日志插件。在实现上，StarRocks 会在执行 SQL 后调用该插件收集 SQL 的审计信息，审计信息的内容会在内存中攒批后基于 Stream Load 的方式导入至 StarRocks 表中。
 
-##### 注意：
+**注意事项：**
 
-1、在使用插件时，随着StarRocks的迭代升级，审计日志fe.audit.log中的字段个数也在逐渐增多，所以不同的StarRocks版本需要使用对应版本的插件，同时在StarRocks中存放审计日志的表的创建语句也要随之调整，下面演示所用的建表语句适用于**StarRocks 2.4+**版本。
+1、使用插件：随着 StarRocks 的迭代升级，审计日志 fe.audit.log 中的字段个数可能会逐渐增多，因此不同的 StarRocks 版本需要使用对应版本的插件，同时在 StarRocks 中存放审计日志的表的创建语句也要随之调整。当前代码及下文演示所用的建表语句适用于 **StarRocks 2.4 及后续**版本。
 
-2、在开发插件时，若发现StarRocks新迭代版本中的审计日志格式出现了变化，则需要替换工程中的fe-plugins-auditloader\lib\starrocks-fe.jar，同时修改代码中和字段相关的内容。
+2、开发插件：若发现 StarRocks 新版本中的审计日志字段或格式出现了变化，则需要替换 Java 工程中的 `fe-plugins-auditloader\lib\starrocks-fe.jar` 为新版本 StarRocks 包中 `fe/lib/starrocks-fe.jar`，同时修改代码中和字段相关的内容。
 
 
 
@@ -15,15 +15,15 @@ StarRocks中所有SQL的审计日志保存在本地fe/log/fe.audit.log里，没�
 
 ##### 1、创建内部表
 
-我们首先在StarRocks中创建一个动态分区表，来保存审计日志中的数据。为了规范使用，建议为其单独创建一个数据库。
+首先需要在 StarRocks 中创建一个动态分区表，来保存审计日志中的数据。为了规范使用，建议为其单独创建一个数据库。
 
-创建存放审计日志的数据库`starrocks_audit_db__`：
+例如，创建存放审计日志的数据库 `starrocks_audit_db__`：
 
 ```SQL
 create database starrocks_audit_db__;
 ```
 
-在`starrocks_audit_db__`库创建`starrocks_audit_tbl__`表：
+在 `starrocks_audit_db__` 库创建 `starrocks_audit_tbl__` 表：
 
 ```SQL
 CREATE TABLE starrocks_audit_db__.starrocks_audit_tbl__ (
@@ -58,16 +58,16 @@ PARTITION BY RANGE (`timestamp`) ()
 DISTRIBUTED BY HASH (`queryId`) BUCKETS 3 
 PROPERTIES (
   "dynamic_partition.time_unit" = "DAY",
-  "dynamic_partition.start" = "-30",
+  "dynamic_partition.start" = "-30",  --表示只保留最近30天的审计信息，可视需求调整
   "dynamic_partition.end" = "3",
   "dynamic_partition.prefix" = "p",
   "dynamic_partition.buckets" = "3",
   "dynamic_partition.enable" = "true",
-  "replication_num" = "3"
+  "replication_num" = "3"  --若集群中BE个数不大于3，可调整副本数为1，生产集群不推荐调整
 );
 ```
 
-`starrocks_audit_tbl__`是动态分区表，我们在建表时没有直接创建分区，所以建表后需要等待后台动态分区调度进程调度后才会生成当天及后三天的分区。动态分区调度进程默认10分钟调度一次，我们可以先观察分区是否已经被创建，再进行后续操作，分区查看语句为：
+`starrocks_audit_tbl__` 是动态分区表，我们在建表时没有直接创建分区，所以建表后需要等待后台动态分区调度线程调度后才会生成当天及后三天的分区。动态分区线程默认每10分钟被调度一次，我们可以先观察该表的分区是否已经被创建，再进行后续操作。分区查看语句为：
 
 ```SQL
 show partitions from starrocks_audit_db__.starrocks_audit_tbl__;
@@ -77,7 +77,7 @@ show partitions from starrocks_audit_db__.starrocks_audit_tbl__;
 
 ##### 2、修改配置文件
 
-度盘中的审计插件名称为auditloader.zip，解压插件：
+执行安装时，所需的审计插件完整包为 auditloader.zip，使用 unzip 命令解压插件：
 
 ```SHELL
 [root@node01 ~]# unzip auditloader.zip
@@ -87,15 +87,15 @@ Archive:  auditloader.zip
   inflating: plugin.properties
 ```
 
-这句命令会把zip里面的文件直接解压到当前目录，解压后可以得到插件中的三个文件：
+说明：该命令会将 zip 内的文件直接解压到当前目录，解压后可以得到插件中的三个文件：
 
-`auditloader.jar`：插件代码打包的核心jar包
+`auditloader.jar`：插件代码打包的核心 jar 包
 
 `plugin.conf`：插件配置文件，需根据集群信息修改
 
-`plugin.properties`：插件属性文件，无需修改
+`plugin.properties`：插件属性文件，通常无需修改
 
-根据我们实际的集群信息，修改配置文件`plugin.conf`：
+根据我们实际的集群信息，修改配置文件 `plugin.conf`：
 
 ```XML
 ### plugin configuration
@@ -116,6 +116,9 @@ frontend_host_port=127.0.0.1:8030
 # If the response time of a query exceed this threshold, it will be recored in audit table as slow_query.
 qe_slow_log_ms=5000
 
+# the capacity of audit queue, default is 1000.
+max_queue_size=1000
+
 # Database of the audit table.
 database=starrocks_audit_db__
 
@@ -129,19 +132,19 @@ user=root
 password=
 ```
 
-修改完成后，再将上面的三个文件重新打包为zip包备用：
+修改完成后，可使用 zip 命令将上面的三个文件重新打包为 zip 包：
 
 ```SHELL
 [root@node01 ~]# zip -q -m -r auditloader.zip auditloader.jar plugin.conf plugin.properties
 ```
 
-**注意：这句命令会将需要打包的文件移动到auditloader.zip中，并覆盖该目录下原有的auditloader.zip文件。也即执行完打包命令后，该目录下只会保留一个最新的auditloader.zip插件包文件。**
+**注意：该命令会将需要打包的文件移动到 auditloader.zip 中，并覆盖该目录下原有的 auditloader.zip 文件。也即执行完打包命令后，该目录下只会保留一个最新的 auditloader.zip 插件包。**
 
 
 
 ##### 3、分发插件
 
-将auditloader.zip分发至集群所有FE节点，各节点分发路径需要一致。例如我们都分发至StarRocks部署目录/opt/module/starrocks/下，也即auditloader.zip文件在集群所有FE节点的路径都为：
+当使用本地包方式安装时，需将 auditloader.zip 分发至集群所有 FE 节点，且各节点分发路径需要一致。例如我们都分发至 StarRocks 部署目录 `/opt/module/starrocks/` 下，也即 auditloader.zip 文件在集群所有 FE 节点的路径都为：
 
 ```
 /opt/module/starrocks/auditloader.zip
@@ -151,13 +154,13 @@ password=
 
 ##### 4、安装插件
 
-StarRocks安装本地插件的语法为：
+StarRocks 安装本地插件的语法为：
 
 ```sql
-INSTALL PLUGIN FROM "/location/plugindemo.zip";
+INSTALL PLUGIN FROM "/location/plugin_package_name.zip";
 ```
 
-根据我们分发文件的路径修改命令后执行：
+例如根据上文分发文件的路径修改命令后执行：
 
 ```SQL
 mysql> INSTALL PLUGIN FROM "/opt/module/starrocks/auditloader.zip";
@@ -181,8 +184,8 @@ JavaVersion: 1.8.31
 *************************** 2. row ***************************
        Name: AuditLoader
        Type: AUDIT
-Description: load audit log to starrocks, and user can view the statistic of queries
-    Version: 3.0.0
+Description: Available for StarRocks 2.4 and later versions. Load audit information to StarRocks, and user can view the statistic of queries. 
+    Version: 3.0.1
 JavaVersion: 1.8.0
   ClassName: com.starrocks.plugin.audit.AuditLoaderPlugin
      SoName: NULL
@@ -191,34 +194,37 @@ JavaVersion: 1.8.0
  Properties: {}
 ```
 
-我们可以看到当前有两个插件，其中Name属性为`AuditLoader`的插件即为我们刚才安装的审计日志插件，其状态为INSTALLED，表示已安装成功。
+可看到当前有两个插件，其中 Name 为 `AuditLoader` 的插件即为上文安装的审计日志插件，其状态为 INSTALLED 表示已安装成功。Name 为 `__builtin_AuditLogBuilder` 的插件为 StarRocks 内置的审计插件，用来打印审计信息到本地日志目录生成  fe.audit.log，当前不需要关注。需要说明的是，这两个插件的数据来源于同一个方法，若感觉新安装的审计插件入库后的数据不正确，可对比 fe.audit.log 来进行验证。
 
-Name为`__builtin_AuditLogBuilder`的插件为StarRocks自己的日志插件，是用来打印审计日志到本地日志目录生成fe.audit.log的。
+**说明：fe/plugins 是 StarRocks 外部插件的安装目录，在审计插件安装完成后，会在各个 FE 的 fe/plugins 中生成一个 AuditLoader 文件夹（插件卸载后该目录自动删除）。若我们后续需要修改插件的配置，除卸载重装插件（推荐），也可替换该目录中的 auditloader.jar 或修改 plugin.conf，然后重启 FE 使修改生效。**
 
-StarRocks自带的这个`__builtin_AuditLogBuilder`插件我们千万不要动它，咱们自己安装的插件则可以视需求随意卸载，卸载命令语法为：
+
+
+##### 5、卸载插件
+
+在需要升级插件或者调整插件配置时，AuditLoader 插件也可视需求进行卸载，卸载命令的语法为：
 
 ```SQL
 UNINSTALL PLUGIN plugin_name;
---plugin_name即SHOW PLUGINS命令查到的插件Name信息。
+--plugin_name 即 SHOW PLUGINS 命令查到的插件 Name 信息，通常应为 AuditLoader。
 ```
 
-**注意：AuditLoader日志审计插件安装完成后，我们可以观察到fe/plugins/目录下生成了一个AuditLoader文件夹，这个文件夹相当于是StarRocks加载auditloader.zip插件后存放的临时目录。每次重启FE，StarRocks都会重新从我们安装插件时指定的路径中重新加载auditloader.zip文件。也是因此，前面分发至各FE节点的auditloader.zip文件我们千万不要移动或删除。**
 
 
+##### 6、查看数据
 
-##### 5、查看数据
-
-AuditLoader插件安装完成后，审计日志文件中的数据并不是实时的入库。StarRocks后台会按照我们配置文件plugin.conf中配置的参数，攒批60秒或50M执行一次Stream Load导入。等待期间，我们可以简单执行几条SQL语句，看对应的审计数据是否能够正常入库，例如执行：
+在 AuditLoader 插件安装完成后，SQL 执行后的审计信息并不是实时入库。StarRocks 后台会按照配置文件 plugin.conf 中配置的参数，攒批 60 秒或 50M 执行一次 Stream Load 导入。测试等待期间，可简单执行几条 SQL 语句，看对应的审计数据是否能够正常入库，例如执行：
 
 ```sql
-mysql> CREATE TABLE starrocks.audit_test(c1 int,c2 int,c3 int,c4 date,c5 bigint) Distributed BY hash(c1) properties("replication_num" = "1");
-mysql> insert into starrocks.audit_test values(211014001,10001,13,'2021-10-14',1999),(211014002,10002,13,'2021-10-14',6999),(211015098,16573,19,'2021-10-15',3999);
+mysql> CREATE DATABASE test;
+mysql> CREATE TABLE test.audit_test(c1 int,c2 int,c3 int,c4 date,c5 bigint) Distributed BY hash(c1) properties("replication_num" = "1");
+mysql> insert into test.audit_test values(211014001,10001,13,'2021-10-14',1999),(211014002,10002,13,'2021-10-14',6999),(211015098,16573,19,'2021-10-15',3999);
 ```
 
-等待1分钟左右，查看审计表数据：
+等待 1 分钟左右，查看审计表数据：
 
 ```sql
 mysql> select * from starrocks_audit_db__.starrocks_audit_tbl__;
 ```
 
-正常来说数据都可以成功入库，如果表内始终没有数据，可以检查配置文件plugin.conf中信息配置是否正确，如果有误，可以参考前面的步骤修改配置文件，卸载插件后重新安装。或者我们也可以查看fe.log，用排查Stream Load任务的方式来定位问题。
+**说明：通常数据都可以正确入库，若表内始终没有数据，可以检查配置文件 plugin.conf 中 IP、端口、用户权限、用户密码等信息是否正确。审计插件的日志会打印在各个 FE 的 fe.log 中，因此也可以在 fe.log 中检索关键字 `audit`，用排查 Stream Load 任务的思路来定位问题。**
