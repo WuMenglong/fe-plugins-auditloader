@@ -28,13 +28,12 @@ import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -42,12 +41,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /*
- * This plugin will load audit information to specified starrocks table at specified interval
+ * This plugin will load audit log to specified starrocks table at specified interval
  */
 public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     private final static Logger LOG = LogManager.getLogger(AuditLoaderPlugin.class);
 
-    private static SimpleDateFormat DATETIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static final SimpleDateFormat DATETIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     private StringBuilder auditBuffer = new StringBuilder();
     private long lastLoadTime = 0;
@@ -58,6 +57,15 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     private AuditLoaderConf conf;
     private volatile boolean isClosed = false;
     private volatile boolean isInit = false;
+
+    /**
+     * 列分隔符
+     */
+    private static final char COLUMN_SEPARATOR = 0x01;
+    /**
+     * 行分隔符
+     */
+    private static final char ROW_DELIMITER = 0x02;
 
     @Override
     public void init(PluginInfo info, PluginContext ctx) throws PluginException {
@@ -101,7 +109,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
             props.setProperty(entry.getKey(), entry.getValue());
         }
 
-        final Map<String, String> properties = props.stringPropertyNames().stream().collect(Collectors.toMap(Function.identity(), props::getProperty));
+        final Map<String, String> properties = props.stringPropertyNames().stream()
+                .collect(Collectors.toMap(Function.identity(), props::getProperty));
         conf = new AuditLoaderConf();
         conf.init(properties);
         conf.feIdentity = ctx.getFeIdentity();
@@ -121,7 +130,8 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     }
 
     public boolean eventFilter(AuditEvent.EventType type) {
-        return type == AuditEvent.EventType.AFTER_QUERY;
+        return type == AuditEvent.EventType.AFTER_QUERY ||
+                type == AuditEvent.EventType.CONNECTION;
     }
 
     public void exec(AuditEvent event) {
@@ -136,37 +146,50 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
     }
 
     private void assembleAudit(AuditEvent event) {
-        auditBuffer.append(event.queryId).append("\t");
-        auditBuffer.append(longToTimeString(event.timestamp)).append("\t");
-        String queryType = (event.queryTime > conf.qeSlowLogMs) ? "slow_query" : "query";
-        auditBuffer.append(queryType).append("\t");
-        auditBuffer.append(event.clientIp).append("\t");
-        auditBuffer.append(event.user).append("\t");
-        auditBuffer.append(event.authorizedUser).append("\t");
-        auditBuffer.append(event.resourceGroup).append("\t");
-        auditBuffer.append(event.catalog).append("\t");
-        auditBuffer.append(event.db).append("\t");
-        auditBuffer.append(event.state).append("\t");
-        auditBuffer.append(event.errorCode).append("\t");
-        auditBuffer.append(event.queryTime).append("\t");
-        auditBuffer.append(event.scanBytes).append("\t");
-        auditBuffer.append(event.scanRows).append("\t");
-        auditBuffer.append(event.returnRows).append("\t");
-        auditBuffer.append(event.cpuCostNs).append("\t");
-        auditBuffer.append(event.memCostBytes).append("\t");
-        auditBuffer.append(event.stmtId).append("\t");
-        auditBuffer.append(event.isQuery ? 1 : 0).append("\t");
-        auditBuffer.append(event.feIp).append("\t");
+        String queryType = getQueryType(event);
+        auditBuffer.append(getQueryId(queryType,event)).append(COLUMN_SEPARATOR);
+        auditBuffer.append(longToTimeString(event.timestamp)).append(COLUMN_SEPARATOR);
+        auditBuffer.append(queryType).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.clientIp).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.user).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.authorizedUser).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.resourceGroup).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.catalog).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.db).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.state).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.errorCode).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.queryTime).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.scanBytes).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.scanRows).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.returnRows).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.cpuCostNs).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.memCostBytes).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.stmtId).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.isQuery ? 1 : 0).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.feIp).append(COLUMN_SEPARATOR);
+        auditBuffer.append(truncateByBytes(event.stmt)).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.digest).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.planCpuCosts).append(COLUMN_SEPARATOR);
+        auditBuffer.append(event.planMemCosts).append(ROW_DELIMITER);
+    }
 
-        String stmt = truncateByBytes(event.stmt).replace("\t", " ").replace("\n", " ").replace("\r ", "");
-        if (stmt.contains("/*") && stmt.contains("*/") && stmt.contains("DBeaver")) {
-            stmt = stmt.substring(stmt.indexOf("*/") + 3);
+    private String getQueryId(String prefix, AuditEvent event) {
+        return (Objects.isNull(event.queryId) || event.queryId.isEmpty()) ? prefix + "-" + UUID.randomUUID() : event.queryId;
+    }
+
+    private String getQueryType(AuditEvent event) {
+        try {
+            switch (event.type) {
+                case CONNECTION:
+                    return "connection";
+                case DISCONNECTION:
+                    return "disconnection";
+                default:
+                    return (event.queryTime > conf.qeSlowLogMs) ? "slow_query" : "query";
+            }
+        } catch (Exception e) {
+            return (event.queryTime > conf.qeSlowLogMs) ? "slow_query" : "query";
         }
-        LOG.debug("receive audit event with stmt: {}", stmt);
-        auditBuffer.append(stmt).append("\t");
-        auditBuffer.append(event.digest).append("\t");
-        auditBuffer.append(event.planCpuCosts).append("\t");
-        auditBuffer.append(event.planMemCosts).append("\n");
     }
 
     private String truncateByBytes(String str) {
@@ -174,7 +197,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         if (maxLen >= str.getBytes().length) {
             return str;
         }
-        Charset utf8Charset = Charset.forName("UTF-8");
+        Charset utf8Charset = StandardCharsets.UTF_8;
         CharsetDecoder decoder = utf8Charset.newDecoder();
         byte[] sb = str.getBytes();
         ByteBuffer buffer = ByteBuffer.wrap(sb, 0, maxLen);
@@ -192,19 +215,18 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         if(auditBuffer.length() == 0) {
             return;
         }
+
         lastLoadTime = System.currentTimeMillis();
         // begin to load
         try {
-            StarrocksStreamLoader.LoadResponse response = loader.loadBatch(auditBuffer);
+            StarrocksStreamLoader.LoadResponse response = loader.loadBatch(auditBuffer, String.valueOf(COLUMN_SEPARATOR), String.valueOf(ROW_DELIMITER));
             LOG.debug("audit loader response: {}", response);
         } catch (Exception e) {
-            LOG.debug("encounter exception when putting current audit batch, discard current batch", e);
+            LOG.error("encounter exception when putting current audit batch, discard current batch", e);
         } finally {
             // make a new string builder to receive following events.
             this.auditBuffer = new StringBuilder();
         }
-
-        return;
     }
 
     public static class AuditLoaderConf {
@@ -229,7 +251,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
         public String table = "starrocks_audit_tbl__";
         // the identity of FE which run this plugin
         public String feIdentity = "";
-        public int maxStmtLength = 4096;
+        public int maxStmtLength = 1048576;
         public int qeSlowLogMs = 5000;
         public int maxQueueSize = 1000;
 
@@ -297,7 +319,7 @@ public class AuditLoaderPlugin extends Plugin implements AuditPlugin {
 
     public static synchronized String longToTimeString(long timeStamp) {
         if (timeStamp <= 0L) {
-            return "1900-01-01 00:00:00";
+            return DATETIME_FORMAT.format(new Date());
         }
         return DATETIME_FORMAT.format(new Date(timeStamp));
     }

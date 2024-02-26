@@ -55,7 +55,7 @@ public class StarrocksStreamLoader {
         this.feIdentity = conf.feIdentity.replaceAll("\\.", "_");
     }
 
-    private HttpURLConnection getConnection(String urlStr, String label) throws IOException {
+    private HttpURLConnection getConnection(String urlStr, String label, String separator, String delimiter) throws IOException {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setInstanceFollowRedirects(false);
@@ -66,6 +66,8 @@ public class StarrocksStreamLoader {
 
         conn.addRequestProperty("label", label);
         conn.addRequestProperty("max_filter_ratio", "1.0");
+        conn.addRequestProperty("column_separator", separator);
+        conn.addRequestProperty("row_delimiter", delimiter);
 
         conn.setDoOutput(true);
         conn.setDoInput(true);
@@ -80,6 +82,8 @@ public class StarrocksStreamLoader {
         sb.append("-H \"").append("Expect\":").append("\"100-continue\" \\\n  ");
         sb.append("-H \"").append("Content-Type\":").append("\"text/plain; charset=UTF-8\" \\\n  ");
         sb.append("-H \"").append("max_filter_ratio\":").append("\"1.0\" \\\n  ");
+        sb.append("-H \"").append("column_separator\":").append("\"\\x01\" \\\n  ");
+        sb.append("-H \"").append("row_delimiter\":").append("\"\\x02\" \\\n  ");
         sb.append("-H \"").append("columns\":").append("\"queryId, timestamp, queryType, clientIp, user, authorizedUser, resourceGroup, catalog, db, state, errorCode," +
                 "queryTime, scanBytes, scanRows, returnRows, cpuCostNs, memCostBytes, stmtId, isQuery, feIp, stmt, digest, planCpuCosts, planMemCosts\" \\\n  ");
         sb.append("\"").append(conn.getURL()).append("\"");
@@ -106,7 +110,7 @@ public class StarrocksStreamLoader {
         return response.toString();
     }
 
-    public LoadResponse loadBatch(StringBuilder sb) {
+    public LoadResponse loadBatch(StringBuilder sb, String separator, String delimiter) {
         Calendar calendar = Calendar.getInstance();
         String label = String.format("audit_%s%02d%02d_%02d%02d%02d_%s",
                 calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH),
@@ -117,7 +121,7 @@ public class StarrocksStreamLoader {
         HttpURLConnection beConn = null;
         try {
             // build request and send to fe
-            feConn = getConnection(loadUrlStr, label);
+            feConn = getConnection(loadUrlStr, label, separator, delimiter);
             int status = feConn.getResponseCode();
             // fe send back http response code TEMPORARY_REDIRECT 307 and new be location
             if (status != 307) {
@@ -129,7 +133,7 @@ public class StarrocksStreamLoader {
                 throw new Exception("redirect location is null");
             }
             // build request and send to new be location
-            beConn = getConnection(location, label);
+            beConn = getConnection(location, label, separator, delimiter);
             // send data to be
             BufferedOutputStream bos = new BufferedOutputStream(beConn.getOutputStream());
             bos.write(sb.toString().getBytes());
